@@ -1,0 +1,19 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/*.egg-info/
+
+# Node
+frontend/node_modules/
+frontend/build/
+
+# Env files
+**/.env
+
+# Mac
+.DS_Store
+
+# Ollama / model files
+*.gguf
+*.bin
