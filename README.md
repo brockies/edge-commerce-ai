@@ -184,10 +184,10 @@ Minimum values:
 MEDUSA_URL=http://127.0.0.1:9000
 MEDUSA_PUBLISHABLE_KEY=pk_your_publishable_key_here
 MEDUSA_ADMIN_EMAIL=admin@example.com
-MEDUSA_ADMIN_PASSWORD=supersecret
+MEDUSA_ADMIN_PASSWORD=<your_medusa_admin_password>
 OLLAMA_URL=http://127.0.0.1:11434
 DEFAULT_MODEL=deepseek-r1:7b
-DB_URL=postgresql://medusa-store:medusa-store@127.0.0.1:5434/medusa-store
+DB_URL=postgresql://<user>:<password>@127.0.0.1:5434/<database>
 HF_LOCAL_ONLY=true
 ```
 
@@ -215,7 +215,7 @@ EXPLANATION_PROVIDER=openai
 RECOMMENDATION_PROVIDER=openai
 EXPLANATION_MODEL=gpt-5.4-mini
 RECOMMENDATION_MODEL=gpt-5.4-mini
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=<your_openai_api_key>
 ```
 
 ### 3. Embed the catalog
