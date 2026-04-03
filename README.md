@@ -180,6 +180,8 @@ Create `backend/.env` from [backend/.env.example](backend/.env.example).
 
 Minimum values:
 
+Never commit real credentials or API keys.
+
 ```env
 MEDUSA_URL=http://127.0.0.1:9000
 MEDUSA_PUBLISHABLE_KEY=pk_your_publishable_key_here

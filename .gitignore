@@ -10,6 +10,9 @@ frontend/build/
 
 # Env files
 **/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
 
 # Runtime logs / temp output
 backend/.tmp/
@@ -21,3 +24,18 @@ frontend/*.log
 # Ollama / model files
 *.gguf
 *.bin
+
+# Key / cert artifacts (avoid accidental commits)
+**/*.pem
+**/*.key
+**/*.crt
+**/*.cer
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/.ssh/
+**/id_rsa
+**/id_rsa.pub
+**/id_ed25519
+**/id_ed25519.pub
