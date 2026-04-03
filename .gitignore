@@ -11,6 +11,10 @@ frontend/build/
 # Env files
 **/.env
 
+# Runtime logs / temp output
+backend/.tmp/
+frontend/*.log
+
 # Mac
 .DS_Store
 
