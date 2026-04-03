@@ -160,9 +160,9 @@ ollama pull deepseek-r1:7b
 
 ```bash
 docker run --name edge-commerce-db \
-  -e POSTGRES_USER=medusa-store \
-  -e POSTGRES_PASSWORD=medusa-store \
-  -e POSTGRES_DB=medusa-store \
+  -e POSTGRES_USER=<pgvector_user> \
+  -e POSTGRES_PASSWORD=<pgvector_password> \
+  -e POSTGRES_DB=<pgvector_database> \
   -p 5434:5432 \
   -d pgvector/pgvector:pg16
 ```
@@ -206,7 +206,7 @@ Optional provider overrides:
 ```env
 EXPLANATION_PROVIDER=ollama
 RECOMMENDATION_PROVIDER=ollama
-OPENAI_API_KEY=
+OPENAI_API_KEY=<your_openai_api_key>
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 

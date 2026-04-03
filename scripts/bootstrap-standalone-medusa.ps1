@@ -1,7 +1,7 @@
 param(
     [string]$ProjectName = "medusa-store",
     [string]$TargetRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path,
-    [string]$DatabaseUrl = "postgres://postgres:postgres@127.0.0.1:5432/medusa-store",
+    [string]$DatabaseUrl = "",
     [switch]$SkipDb,
     [switch]$InstallStorefront
 )
@@ -24,6 +24,10 @@ $args = @(
 if ($SkipDb) {
     $args += "--skip-db"
 } else {
+    if (-not $DatabaseUrl) {
+        Write-Error "DatabaseUrl is required unless -SkipDb is set. Example: postgres://<user>:<password>@127.0.0.1:5432/medusa-store"
+        exit 1
+    }
     $args += @("--db-url", $DatabaseUrl)
 }
 

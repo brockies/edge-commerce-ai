@@ -15,7 +15,7 @@ Without the publishable key, this app's calls to `/store/products` will fail.
 Keep Medusa in a sibling directory so you can reuse it with other projects:
 
 ```text
-C:\Users\s.brockie\projects\
+<projects-root>\
   edge-commerce-ai\
   medusa-store\
 ```
@@ -36,9 +36,9 @@ If you want a quick local database, start Docker Desktop and create a PostgreSQL
 
 ```powershell
 docker run --name medusa-postgres `
-  -e POSTGRES_USER=postgres `
-  -e POSTGRES_PASSWORD=postgres `
-  -e POSTGRES_DB=medusa-store `
+  -e POSTGRES_USER=<postgres_user> `
+  -e POSTGRES_PASSWORD=<postgres_password> `
+  -e POSTGRES_DB=<medusa_database_name> `
   -p 5432:5432 `
   -d postgres:16
 ```
@@ -52,26 +52,26 @@ From anywhere, run:
 ```powershell
 npx create-medusa-app@latest medusa-store `
   --no-browser `
-  --directory-path C:\Users\s.brockie\projects `
-  --db-url postgres://postgres:postgres@127.0.0.1:5432/medusa-store
+  --directory-path <projects-root> `
+  --db-url postgres://<postgres_user>:<postgres_password>@127.0.0.1:5432/<medusa_database_name>
 ```
 
-This creates `C:\Users\s.brockie\projects\medusa-store`.
+This creates `<projects-root>\medusa-store`.
 
 When prompted about the optional Next.js starter storefront, choose `N` unless you also want Medusa's sample storefront installed in a second directory.
 
 If you want to create the project first and wire the database later, use `--skip-db` instead of `--db-url ...`.
 
-If you scaffold with `--skip-db`, add the database URL to `C:\Users\s.brockie\projects\medusa-store\.env` before the first start:
+If you scaffold with `--skip-db`, add the database URL to `<path-to-medusa>\.env` before the first start:
 
 ```env
-DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/medusa-store
+DATABASE_URL=postgres://<postgres_user>:<postgres_password>@127.0.0.1:5432/<medusa_database_name>
 ```
 
 ## 3. Run Medusa
 
 ```powershell
-cd C:\Users\s.brockie\projects\medusa-store
+cd <path-to-medusa>
 npm run dev
 ```
 
@@ -82,8 +82,8 @@ The Medusa admin and backend should then be available on `http://127.0.0.1:9000`
 If the installer did not create an admin user for you, create one from the Medusa project directory:
 
 ```powershell
-cd C:\Users\s.brockie\projects\medusa-store
-npx medusa user -e admin@example.com -p supersecret
+cd <path-to-medusa>
+npx medusa user -e admin@example.com -p <your_medusa_admin_password>
 ```
 
 Then in Medusa Admin:
@@ -102,10 +102,10 @@ Copy [backend/.env.example](/C:/Users/s.brockie/projects/edge-commerce-ai/backen
 MEDUSA_URL=http://127.0.0.1:9000
 MEDUSA_PUBLISHABLE_KEY=pk_...
 MEDUSA_ADMIN_EMAIL=admin@example.com
-MEDUSA_ADMIN_PASSWORD=supersecret
+MEDUSA_ADMIN_PASSWORD=<your_medusa_admin_password>
 OLLAMA_URL=http://127.0.0.1:11434
 DEFAULT_MODEL=deepseek-r1:7b
-DB_URL=postgresql://medusa-store:medusa-store@127.0.0.1:5434/medusa-store
+DB_URL=postgresql://<user>:<password>@127.0.0.1:5434/<database>
 ```
 
 Notes:
@@ -120,7 +120,7 @@ Notes:
 Once `python` works on this machine:
 
 ```powershell
-cd C:\Users\s.brockie\projects\edge-commerce-ai\backend
+cd <path-to-this-repo>\backend
 python add_products.py
 python embed_products.py
 ```
