@@ -1,103 +1,114 @@
-# ActiveEdge AI — Edge Commerce Intelligence
+# ActiveEdge AI - Edge Commerce Intelligence
 
-> On-device AI product recommendation engine built with RAG architecture, DeepSeek-R1 7B, pgvector semantic search, FastAPI and React. Zero data egress. Full reasoning transparency.
+> Medusa-backed shopping demo with local semantic search, local LLM reasoning, and zero data egress.
 
-![ActiveEdge AI Demo](https://img.shields.io/badge/AI-DeepSeek--R1%207B-blue) ![Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20React%20%7C%20pgvector-green) ![Data](https://img.shields.io/badge/Data%20Egress-Zero-brightgreen)
+## What This Demo Does
 
----
+ActiveEdge AI is a local-first commerce assistant for fitness products.
 
-## What Is This?
+A shopper enters a prompt such as `I want to start running outdoors`, and the app:
 
-ActiveEdge AI is a proof-of-concept demonstrating **Reasoning at the Edge** — a 2026 AI trend where small, capable models run entirely on-device rather than in the cloud.
+1. Embeds the query locally with `all-MiniLM-L6-v2`
+2. Finds the nearest products in `pgvector`
+3. Uses a local Ollama model to explain or rank those candidates
+4. Shows Medusa product cards with real prices, variants, and add-to-cart
 
-A customer types a natural language query like *"I want to start running outdoors"* and the system:
+The demo currently supports two recommendation modes:
 
-1. Converts the query to a vector embedding **locally**
-2. Runs a semantic similarity search against the product catalogue via **pgvector**
-3. Sends only the most relevant products to **DeepSeek-R1 7B** running via Ollama
-4. Streams the model's **live reasoning chain** and final recommendation back to the UI
-5. Presents product cards with **Add to Cart** functionality
+- `Fast`: pgvector picks the products immediately, then a local LLM explains the choices
+- `Deep AI`: a local LLM is put back in the recommendation loop to choose the final set from vector-search candidates
 
-**Zero data leaves the device. No API costs. Full explainability.**
+Both modes run locally on the machine.
 
----
-
-## Architecture
-
-```
-Customer Query
-      │
-      ▼
-┌─────────────────────┐
-│  React Frontend     │  ← Shopping cart UI + AI assistant panel
-│  (ActiveEdge UI)    │
-└────────┬────────────┘
-         │ HTTP / SSE streaming
-         ▼
-┌─────────────────────┐
-│  FastAPI Backend    │  ← RAG orchestration layer
-└────────┬────────────┘
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-┌───────┐  ┌──────────────────┐
-│Ollama │  │   pgvector DB    │
-│Deep   │  │                  │
-│Seek   │  │ Product embeddings│
-│R1 7B  │  │ (all-MiniLM-L6)  │
-└───────┘  └──────────────────┘
-                   │
-                   ▼
-         ┌──────────────────┐
-         │   Medusa v2      │  ← Product catalogue (standalone)
-         │   (separate repo)│
-         └──────────────────┘
-```
-
-### Why RAG?
-
-Instead of sending all products to the model (which breaks at scale), we:
-- Embed every product description as a **384-dimensional vector**
-- At query time, embed the user's query and find the **top 5 most semantically similar products**
-- Only those products are sent to DeepSeek — scales to millions of products
-
----
-
-## Tech Stack
+## Current Stack
 
 | Layer | Technology |
 |---|---|
-| AI Model | DeepSeek-R1 7B via Ollama |
-| Embeddings | sentence-transformers (all-MiniLM-L6-v2) |
-| Vector Search | pgvector (PostgreSQL extension) |
-| Backend | Python FastAPI |
+| Ecommerce | Medusa v2 (standalone service) |
+| Product API | Medusa Store API |
+| Backend | FastAPI |
 | Frontend | React + TypeScript |
-| Ecommerce | Medusa v2 (separate service) |
-| Database | PostgreSQL + pgvector (Docker) |
+| Vector Search | PostgreSQL + pgvector |
+| Embeddings | sentence-transformers (`all-MiniLM-L6-v2`) |
+| Local LLM | Ollama |
+| Current demo model defaults | `llama3.2:3b` for explanation and deep-mode ranking |
+| Optional heavier model | `deepseek-r1:7b` |
 
----
+## How Search Works
+
+### Fast mode
+
+1. The backend embeds the shopper query locally
+2. pgvector returns the nearest catalogue matches
+3. The backend returns 4 unique recommendations
+4. The frontend maps recommendation IDs back to Medusa products
+5. `llama3.2:3b` generates:
+   - `How the AI Decided`
+   - `Why These Picks`
+
+### Deep AI mode
+
+1. The backend embeds the shopper query locally
+2. pgvector returns candidate products
+3. `llama3.2:3b` chooses the final recommendation set from those candidates
+4. The same model generates the explanation and decision trace
+
+## Why RAG?
+
+Instead of sending the full catalog to a model, we:
+
+- embed each product locally with `all-MiniLM-L6-v2`
+- embed the shopper query locally at request time
+- use `pgvector` to retrieve the most relevant products
+- pass only those retrieved candidates into the AI step when needed
+
+Why that matters:
+
+- it scales much better than sending the whole catalog to the model
+- it keeps responses faster and more grounded in real products
+- it reduces local inference cost
+- it works for both `Fast` and `Deep AI` modes
+
+In the current implementation, retrieval is performed before the LLM step in both modes.
+
+## UI Experience
+
+The current UI shows:
+
+- fast or deep recommendation mode toggle
+- recommended product cards
+- real Medusa pricing and variants
+- local `How the AI Decided` trace
+- local `Why These Picks` explanation
+- add-to-cart from recommendation cards
 
 ## Prerequisites
 
-- macOS with Apple Silicon (M1/M2/M3) or Windows with 16GB+ RAM
-- [Ollama](https://ollama.com) installed
 - Docker Desktop
-- Node.js 18+
+- Node.js 20+
 - Python 3.10+
-- Medusa v2 store running separately
+- Ollama installed locally
+- A standalone Medusa v2 project running separately
 
----
+For the Medusa setup used by this repo, see [docs/medusa-standalone-setup.md](/C:/Users/s.brockie/projects/edge-commerce-ai/docs/medusa-standalone-setup.md) and [scripts/bootstrap-standalone-medusa.ps1](/C:/Users/s.brockie/projects/edge-commerce-ai/scripts/bootstrap-standalone-medusa.ps1).
 
-## Getting Started
+## Recommended Local Models
 
-### 1. Pull the reasoning model
+For this laptop-friendly demo flow:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Optional heavier reasoning model:
 
 ```bash
 ollama pull deepseek-r1:7b
 ```
 
-### 2. Start the database
+## Getting Started
+
+### 1. Start the pgvector database
 
 ```bash
 docker run --name edge-commerce-db \
@@ -108,38 +119,53 @@ docker run --name edge-commerce-db \
   -d pgvector/pgvector:pg16
 ```
 
-### 3. Set up the backend
+### 2. Set up the backend
 
 ```bash
 cd backend
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install fastapi uvicorn httpx python-dotenv pgvector psycopg2-binary sentence-transformers
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-Create `backend/.env`:
-```
+Create `backend/.env` from [backend/.env.example](/C:/Users/s.brockie/projects/edge-commerce-ai/backend/.env.example).
+
+Minimum values:
+
+```env
 MEDUSA_URL=http://127.0.0.1:9000
+MEDUSA_PUBLISHABLE_KEY=pk_your_publishable_key_here
+MEDUSA_ADMIN_EMAIL=admin@example.com
+MEDUSA_ADMIN_PASSWORD=supersecret
 OLLAMA_URL=http://127.0.0.1:11434
 DEFAULT_MODEL=deepseek-r1:7b
-MEDUSA_PUBLISHABLE_KEY=your_key_here
 DB_URL=postgresql://medusa-store:medusa-store@127.0.0.1:5434/medusa-store
+HF_LOCAL_ONLY=true
 ```
 
-### 4. Embed your products
+Optional model overrides:
+
+```env
+EXPLANATION_MODEL=llama3.2:3b
+RECOMMENDATION_MODEL=llama3.2:3b
+MEDUSA_COUNTRY_CODE=gb
+```
+
+### 3. Embed the catalog
 
 ```bash
 cd backend
-python3 embed_products.py
+python embed_products.py
 ```
 
-### 5. Start the backend
+### 4. Start the backend
 
 ```bash
+cd backend
 uvicorn main:app --reload --port 8000
 ```
 
-### 6. Start the frontend
+### 5. Start the frontend
 
 ```bash
 cd frontend
@@ -147,66 +173,153 @@ npm install
 npm start
 ```
 
-Visit **http://localhost:3000** 🚀
+Open `http://localhost:3000`.
 
----
+## Run The Demo
 
-## Key Concepts
+If the machine is already set up, use this startup order before a demo:
 
-### Reasoning at the Edge
-DeepSeek-R1 is a **reasoning model** — before answering, it thinks through the problem step by step. This thinking chain is streamed live to the UI, giving full transparency into why products are recommended.
+### 1. Start Medusa
 
-### Vector Embeddings
-Each product description is converted to a list of 384 numbers that captures its semantic meaning. Similar products have similar vectors — enabling search by *meaning* rather than keywords.
+Make sure the standalone Medusa server is running on `http://127.0.0.1:9000`.
 
-### Cosine Similarity
-pgvector finds relevant products by calculating the angle between the query vector and every product vector. A score of `1.0` = identical meaning, `0.0` = completely unrelated (orthogonal).
+### 2. Start Ollama
 
----
+Make sure Ollama is running and the demo model is available:
 
-## Project Structure
-
-```
-edge-commerce-ai/
-├── backend/
-│   ├── main.py              # FastAPI app + RAG endpoints
-│   ├── embed_products.py    # Product ingestion + embedding script
-│   ├── add_products.py      # Seed products via Medusa Admin API
-│   └── .env                 # Environment variables (not committed)
-└── frontend/
-    ├── src/
-    │   ├── App.tsx           # Main React component
-    │   └── App.css           # Styling
-    └── public/
+```bash
+ollama list
 ```
 
----
+Expected model for the current demo flow:
+
+```bash
+llama3.2:3b
+```
+
+### 3. Start the pgvector database
+
+If the container already exists:
+
+```bash
+docker start edge-commerce-db
+```
+
+If you have not created it yet, use the database setup command in [README.md](/C:/Users/s.brockie/projects/edge-commerce-ai/README.md#L108).
+
+### 4. Start the backend
+
+```bash
+cd backend
+venv\Scripts\activate
+uvicorn main:app --reload --port 8000
+```
+
+### 5. Start the frontend
+
+```bash
+cd frontend
+npm start
+```
+
+### 6. Open the app
+
+- Frontend: `http://localhost:3000`
+- Backend health: `http://127.0.0.1:8000/health`
+- Medusa: `http://127.0.0.1:9000`
+
+### 7. Demo checklist
+
+Before presenting, verify:
+
+- Medusa products load in the UI
+- recommendation mode toggle is visible
+- `Why These Picks` appears after a search
+- `How the AI Decided` appears after a search
+- add-to-cart works from recommendation cards
+
+## Medusa Notes
+
+This repo expects Medusa to run separately from the frontend/backend demo.
+
+The current implementation uses Medusa for:
+
+- product catalog
+- publishable Store API access
+- region-aware pricing
+- variants used by the cart UI
+
+If you are setting up Medusa on a new machine, use [docs/medusa-standalone-setup.md](/C:/Users/s.brockie/projects/edge-commerce-ai/docs/medusa-standalone-setup.md).
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/health` | Health check + model info |
-| GET | `/products` | Fetch all products from Medusa |
-| POST | `/recommend` | RAG recommendation (streaming SSE) |
-| POST | `/search` | Debug: show pgvector similarity results |
+| GET | `/health` | Health check and configured default model |
+| GET | `/products` | Fetch products from Medusa with pricing/variants |
+| POST | `/search` | Debug endpoint for vector-search matches |
+| POST | `/recommend` | Streaming SSE recommendation endpoint |
 
----
+`/recommend` accepts:
+
+```json
+{
+  "customer_query": "I want gear for outdoor running",
+  "mode": "fast"
+}
+```
+
+Supported modes:
+
+- `fast`
+- `deep`
+
+`/recommend` streams event types in this order:
+
+- `recommendations`
+- `trace`
+- `insight`
+- `done`
+
+## Project Structure
+
+```text
+edge-commerce-ai/
+|-- backend/
+|   |-- .env.example
+|   |-- add_products.py
+|   |-- embed_products.py
+|   |-- main.py
+|   `-- requirements.txt
+|-- docs/
+|   `-- medusa-standalone-setup.md
+|-- frontend/
+|   `-- src/
+|       |-- App.css
+|       `-- App.tsx
+`-- scripts/
+    `-- bootstrap-standalone-medusa.ps1
+```
+
+## Current Demo Positioning
+
+This is best framed as:
+
+- semantic retrieval running locally
+- AI reasoning running locally
+- ecommerce catalog and pricing from Medusa
+- no cloud inference required
+
+That gives you a clean edge-AI story without blocking the UI on a slower model for every request.
 
 ## Roadmap
 
-- [ ] Azure deployment (Azure Container Apps + Azure AI Foundry)
-- [ ] Redis caching layer for frequent queries
-- [ ] Customer order history context
-- [ ] Multi-agent architecture (planner + critic agents)
-- [ ] Voice interface
+- real Medusa cart persistence and checkout
+- richer metadata filters for activity, budget, and weather
+- hybrid retrieval plus AI refinement
+- startup scripts for the full local stack
+- deployment packaging for demos
 
----
+## Built For
 
-## Built With
-
-This project was built as a demonstration of **Reasoning at the Edge** — one of the key AI trends of 2026. It shows how small, capable reasoning models can deliver production-grade AI features without sending sensitive data to the cloud.
-
----
-
-*Built by Steve Brockie — AI Consultant*
+This project is designed as a stakeholder-friendly demo of edge commerce AI: fast local retrieval, visible local reasoning, and real product data from Medusa.
