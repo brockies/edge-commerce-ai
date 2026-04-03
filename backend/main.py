@@ -34,8 +34,12 @@ app.add_middleware(
 MEDUSA_URL = require_env("MEDUSA_URL")
 OLLAMA_URL = require_env("OLLAMA_URL")
 DEFAULT_MODEL = require_env("DEFAULT_MODEL")
+EXPLANATION_PROVIDER = os.getenv("EXPLANATION_PROVIDER", "ollama").lower()
+RECOMMENDATION_PROVIDER = os.getenv("RECOMMENDATION_PROVIDER", EXPLANATION_PROVIDER).lower()
 EXPLANATION_MODEL = os.getenv("EXPLANATION_MODEL", "llama3.2:3b")
 RECOMMENDATION_MODEL = os.getenv("RECOMMENDATION_MODEL", EXPLANATION_MODEL)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 DB_URL = require_env("DB_URL")
 MEDUSA_PUBLISHABLE_KEY = require_env("MEDUSA_PUBLISHABLE_KEY")
 HF_LOCAL_ONLY = os.getenv("HF_LOCAL_ONLY", "true").lower() == "true"
@@ -194,6 +198,28 @@ def build_reason(query: str, product: dict) -> str:
     return f"{title} is a close fit for this request."
 
 
+def build_fast_trace() -> list[str]:
+    return [
+        "Converted the shopper request into a local embedding vector.",
+        "Compared that vector against product embeddings stored in pgvector.",
+        "Returned the nearest catalogue matches, then asked the configured model to summarise them.",
+    ]
+
+
+def build_deep_trace() -> list[str]:
+    return [
+        "Converted the shopper request into a local embedding vector.",
+        "Retrieved the nearest catalogue candidates from pgvector.",
+        "Asked the configured model to choose the final set and explain the tradeoffs.",
+    ]
+
+
+def resolve_provider_label(provider: str) -> str:
+    if provider == "openai":
+        return "openai"
+    return "ollama"
+
+
 def build_insight_prompt(query: str, recommendations: list[dict]) -> str:
     recommendation_lines = "\n".join(
         [
@@ -201,7 +227,7 @@ def build_insight_prompt(query: str, recommendations: list[dict]) -> str:
             for item in recommendations
         ]
     )
-    return f"""You are an on-device shopping assistant.
+    return f"""You are a shopping assistant.
 
 Customer request: {query}
 
@@ -233,7 +259,7 @@ def build_llm_recommendation_prompt(query: str, products: list[dict]) -> str:
             for p in products
         ]
     )
-    return f"""You are a local ecommerce recommendation assistant.
+    return f"""You are an ecommerce recommendation assistant.
 
 Customer request: {query}
 
@@ -268,35 +294,126 @@ def extract_json_object(value: str) -> str | None:
     return value[start : end + 1]
 
 
-async def generate_local_explanation(query: str, recommendations: list[dict]) -> dict:
+def extract_openai_content(payload: dict) -> str:
+    choices = payload.get("choices", [])
+    if not choices:
+        return ""
+
+    message = choices[0].get("message", {})
+    content = message.get("content", "")
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_parts = []
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+                elif "text" in item:
+                    text_parts.append(str(item.get("text", "")))
+        return "".join(text_parts)
+
+    return str(content)
+
+
+async def generate_json_response(provider: str, model: str, prompt: str) -> dict:
     async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": EXPLANATION_MODEL,
-                "prompt": build_insight_prompt(query, recommendations),
-                "stream": False,
-                "format": "json",
-                "think": False,
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
-        response_text = payload.get("response", "")
+        if provider == "openai":
+            if not OPENAI_API_KEY:
+                raise RuntimeError(
+                    "OPENAI_API_KEY is required when using provider=openai."
+                )
+
+            response = await client.post(
+                f"{OPENAI_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            response_text = extract_openai_content(payload)
+        else:
+            response = await client.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "think": False,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            response_text = payload.get("response", "")
+
         parsed_text = extract_json_object(response_text) or response_text
-        parsed = json.loads(parsed_text)
-        return {
-            "insight": parsed.get("insight", ""),
-            "trace": parsed.get("trace", [])[:3],
-        }
+        return json.loads(parsed_text)
+
+
+async def generate_explanation(query: str, recommendations: list[dict]) -> dict:
+    parsed = await generate_json_response(
+        EXPLANATION_PROVIDER,
+        EXPLANATION_MODEL,
+        build_insight_prompt(query, recommendations),
+    )
+    return {
+        "insight": parsed.get("insight", ""),
+        "trace": parsed.get("trace", [])[:3],
+    }
+
+
+async def generate_ranked_recommendations(query: str, products: list[dict]) -> dict:
+    parsed = await generate_json_response(
+        RECOMMENDATION_PROVIDER,
+        RECOMMENDATION_MODEL,
+        build_llm_recommendation_prompt(query, products),
+    )
+    return {
+        "recommendations": parsed.get("recommendations", [])[:4],
+        "insight": parsed.get("insight", ""),
+    }
+
+
+def execution_pattern() -> str:
+    if EXPLANATION_PROVIDER == "ollama" and RECOMMENDATION_PROVIDER == "ollama":
+        return "local-only"
+    if EXPLANATION_PROVIDER == "openai" or RECOMMENDATION_PROVIDER == "openai":
+        return "tiered"
+    return "mixed"
+
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": DEFAULT_MODEL}
+    return {
+        "status": "ok",
+        "execution_pattern": execution_pattern(),
+        "retrieval": {
+            "provider": "local",
+            "embeddings_model": "all-MiniLM-L6-v2",
+            "vector_store": "pgvector",
+        },
+        "explanation": {
+            "provider": resolve_provider_label(EXPLANATION_PROVIDER),
+            "model": EXPLANATION_MODEL,
+        },
+        "recommendation": {
+            "provider": resolve_provider_label(RECOMMENDATION_PROVIDER),
+            "model": RECOMMENDATION_MODEL,
+        },
+    }
+
 
 @app.get("/products")
 async def products():
     return await get_products()
+
 
 @app.post("/recommend")
 async def recommend(req: RecommendRequest):
@@ -324,40 +441,17 @@ async def recommend(req: RecommendRequest):
 
     async def stream_response():
         if req.mode == "deep":
-            response_text = ""
             try:
-                async with httpx.AsyncClient(timeout=120) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{OLLAMA_URL}/api/generate",
-                        json={
-                            "model": RECOMMENDATION_MODEL,
-                            "prompt": build_llm_recommendation_prompt(
-                                req.customer_query, unique_products
-                            ),
-                            "stream": True,
-                            "format": "json",
-                            "think": False,
-                        },
-                    ) as response:
-                        response.raise_for_status()
-                        async for line in response.aiter_lines():
-                            if not line:
-                                continue
-                            chunk = json.loads(line)
-                            token = chunk.get("response", "")
-                            if token:
-                                response_text += token
-
-                parsed_text = extract_json_object(response_text) or response_text
-                parsed = json.loads(parsed_text)
-                llm_recommendations = parsed.get("recommendations", [])[:4]
+                llm_payload = await generate_ranked_recommendations(
+                    req.customer_query, unique_products
+                )
+                llm_recommendations = llm_payload.get("recommendations", [])[:4]
 
                 yield (
                     f"data: {json.dumps({'type': 'recommendations', 'response': json.dumps({'recommendations': llm_recommendations}), 'done': False})}\n\n"
                 )
 
-                explanation = await generate_local_explanation(
+                explanation = await generate_explanation(
                     req.customer_query, llm_recommendations
                 )
 
@@ -375,14 +469,10 @@ async def recommend(req: RecommendRequest):
                     f"data: {json.dumps({'type': 'recommendations', 'response': json.dumps({'recommendations': recommendations}), 'done': False})}\n\n"
                 )
                 fallback_insight = (
-                    "The deep AI mode could not complete, so these local vector matches "
+                    "The deep AI mode could not complete, so these vector-search matches "
                     "were returned instead."
                 )
-                fallback_trace = [
-                    "Started from the shopper request.",
-                    "Matched the closest local catalogue items.",
-                    "Returned the fallback set to keep the demo responsive.",
-                ]
+                fallback_trace = build_deep_trace()
                 yield (
                     f"data: {json.dumps({'type': 'trace', 'trace': fallback_trace, 'done': False})}\n\n"
                 )
@@ -399,15 +489,14 @@ async def recommend(req: RecommendRequest):
             "done": False,
         }
         yield f"data: {json.dumps(payload)}\n\n"
+        yield (
+            f"data: {json.dumps({'type': 'trace', 'trace': build_fast_trace(), 'done': False})}\n\n"
+        )
 
         try:
-            explanation = await generate_local_explanation(
+            explanation = await generate_explanation(
                 req.customer_query, recommendations
             )
-            if explanation.get("trace"):
-                yield (
-                    f"data: {json.dumps({'type': 'trace', 'trace': explanation['trace'], 'done': False})}\n\n"
-                )
             if explanation.get("insight"):
                 yield (
                     f"data: {json.dumps({'type': 'insight', 'response': explanation['insight'], 'done': False})}\n\n"
@@ -415,15 +504,7 @@ async def recommend(req: RecommendRequest):
         except Exception:
             fallback_insight = (
                 "These products were matched locally using the shopper request and "
-                "catalogue similarity, then summarised on-device for a faster demo."
-            )
-            fallback_trace = [
-                "Read the shopper request locally.",
-                "Pulled the nearest catalogue matches from pgvector.",
-                "Asked the local model to summarise the fit.",
-            ]
-            yield (
-                f"data: {json.dumps({'type': 'trace', 'trace': fallback_trace, 'done': False})}\n\n"
+                "catalogue similarity, then summarised by the configured inference tier."
             )
             yield (
                 f"data: {json.dumps({'type': 'insight', 'response': fallback_insight, 'done': False})}\n\n"
@@ -435,6 +516,7 @@ async def recommend(req: RecommendRequest):
         stream_response(),
         media_type="text/event-stream"
     )
+
 
 @app.post("/search")
 async def search(req: RecommendRequest):

@@ -367,7 +367,7 @@ function App() {
   const getProgressLabel = (): string => {
     if (phase === "thinking") {
       if (recommendMode === "deep") {
-        return "Deep AI mode is reasoning locally with llama3.2:3b...";
+        return "Deep AI mode is ranking candidates with the configured model...";
       }
       return stats.elapsed >= 6
         ? "Matching your request to the best products..."
@@ -376,7 +376,7 @@ function App() {
 
     if (phase === "responding") {
       return visibleRecommendations.length > 0
-        ? "Explaining these picks locally with llama3.2:3b..."
+        ? "Explaining these picks with the configured model..."
         : "Finalising recommendations...";
     }
 
@@ -387,6 +387,22 @@ function App() {
     }
 
     return "";
+  };
+
+  const getActionButtonLabel = (): string => {
+    if (!isStreaming) {
+      return "Find Products ->";
+    }
+
+    if (phase === "responding" && visibleRecommendations.length > 0) {
+      return recommendMode === "fast" ? "Explaining picks..." : "Ranking picks...";
+    }
+
+    if (phase === "thinking" && recommendMode === "deep") {
+      return "Reasoning locally...";
+    }
+
+    return "Finding products...";
   };
 
   const handleRecommend = async () => {
@@ -422,27 +438,37 @@ function App() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
 
+      let buffer = "";
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
 
-        for (const line of lines) {
+        for (const event of events) {
+          const line = event
+            .split("\n")
+            .find((eventLine) => eventLine.startsWith("data: "));
+
+          if (!line) {
+            continue;
+          }
+
           try {
             const json = JSON.parse(line.replace("data: ", ""));
             const respToken = json.response || "";
             const payloadType = json.type || "recommendations";
-            if (!respToken && !json.done) continue;
-
-            tokenCount++;
-            setStats({
-              tokens: tokenCount,
-              elapsed: Math.round((Date.now() - startTime.current) / 1000),
-            });
 
             if (payloadType === "recommendations" && respToken) {
+              tokenCount++;
+              setStats({
+                tokens: tokenCount,
+                elapsed: Math.round((Date.now() - startTime.current) / 1000),
+              });
+
               if (phaseRef.current !== "responding") {
                 phaseRef.current = "responding";
                 setPhase("responding");
@@ -454,6 +480,12 @@ function App() {
                 setRecommendations(recs);
               }
             } else if (payloadType === "insight" && respToken) {
+              tokenCount++;
+              setStats({
+                tokens: tokenCount,
+                elapsed: Math.round((Date.now() - startTime.current) / 1000),
+              });
+
               if (phaseRef.current !== "responding") {
                 phaseRef.current = "responding";
                 setPhase("responding");
@@ -468,6 +500,12 @@ function App() {
                 )
               );
             } else if (payloadType === "done" && json.done) {
+              tokenCount++;
+              setStats({
+                tokens: tokenCount,
+                elapsed: Math.round((Date.now() - startTime.current) / 1000),
+              });
+
               setPhase("done");
               phaseRef.current = "done";
             }
@@ -605,8 +643,8 @@ function App() {
                 <h2 className="ai-title">AI Shopping Assistant</h2>
                 <p className="ai-subtitle">
                   {recommendMode === "fast"
-                    ? "Matched locally | Explained locally by llama3.2:3b | Zero Data Egress"
-                    : "Ranked locally by llama3.2:3b | Zero Data Egress"}
+                    ? "Matched from the local vector index | Explained by the configured AI tier"
+                    : "Retrieved locally | Ranked by the configured AI tier"}
                 </p>
               </div>
             </div>
@@ -660,10 +698,10 @@ function App() {
               >
                 {isStreaming ? (
                   <>
-                    <span className="spinner" /> Finding products...
+                    <span className="spinner" /> {getActionButtonLabel()}
                   </>
                 ) : (
-                  "Find Products ->"
+                  getActionButtonLabel()
                 )}
               </button>
             </div>
@@ -685,7 +723,7 @@ function App() {
                   <p className="recs-subtitle">
                     {recommendMode === "fast"
                       ? "Matched instantly from your local vector index"
-                      : "Selected locally by llama3.2:3b from vector-search candidates"}
+                      : "Selected by the configured ranking tier from vector-search candidates"}
                   </p>
                 </div>
                 {phase === "done" && <span className="done-badge">Complete</span>}
@@ -781,10 +819,10 @@ function App() {
                 <div>
                   <h3 className="trace-title">How the AI Decided</h3>
                   <p className="trace-subtitle">
-                    Short local decision trace for stakeholders
+                    Short decision trace for stakeholders
                   </p>
                 </div>
-                <span className="trace-badge">Local Trace</span>
+                <span className="trace-badge">AI Trace</span>
               </div>
               <div className="trace-grid">
                 {traceSteps.length > 0 ? (
@@ -796,7 +834,7 @@ function App() {
                   ))
                 ) : (
                   <p className="trace-placeholder">
-                    The local model is preparing a short decision trace...
+                    The configured model is preparing a short decision trace...
                   </p>
                 )}
               </div>
@@ -809,7 +847,7 @@ function App() {
                 <div>
                   <h3 className="insight-title">Why These Picks</h3>
                   <p className="insight-subtitle">
-                    Generated locally by llama3.2:3b on this machine
+                    Generated by the configured inference model
                   </p>
                 </div>
                 <span className="insight-badge">Edge AI</span>
@@ -819,7 +857,7 @@ function App() {
                   <p className="insight-text">{insightText}</p>
                 ) : (
                   <p className="insight-placeholder">
-                    DeepSeek is preparing a local explanation for these matches...
+                    The configured model is preparing an explanation for these matches...
                   </p>
                 )}
               </div>
